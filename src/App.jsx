@@ -213,7 +213,7 @@ const App = () => {
     );
 
   return (
-    <div className="min-h-screen bg-secondary-light p-4 md:p-8 font-display text-primary-dark">
+    <div className="w-full min-h-screen bg-secondary-light p-4 md:p-8 font-display text-primary-dark">
       {showSuccess && (
         <div className="fixed top-6 right-6 z-50">
           <div className="bg-success text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-fade-in">
@@ -223,7 +223,7 @@ const App = () => {
         </div>
       )}
 
-      <div className="container-wide space-y-8">
+      <div className="container-narrow space-y-8">
         {/* Header Section - Removed interactive-lift */}
         <header className="card grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <div>
