@@ -8,8 +8,10 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
+import Button from "./components/Button";
+import Input from "./components/Input";
+import Card from "./components/Card";
 
-// Analytics Component for spending distribution
 const ExpenseChart = ({ data, categories }) => {
   const chartData = categories
     .map((cat) => ({
@@ -19,10 +21,10 @@ const ExpenseChart = ({ data, categories }) => {
     .filter((item) => item.value > 0);
 
   const COLORS = [
-    "oklch(44.6% 0.043 257.281)", // primary-light
-    "oklch(72.3% 0.219 149.579)", // success
-    "oklch(63.7% 0.237 25.331)", // error
-    "oklch(27.9% 0.041 260.031)", // primary-dark
+    "oklch(44.6% 0.043 257.281)",
+    "oklch(72.3% 0.219 149.579)",
+    "oklch(63.7% 0.237 25.331)",
+    "oklch(27.9% 0.041 260.031)",
     "#F59E0B",
     "#8B5CF6",
     "#EC4899",
@@ -31,7 +33,7 @@ const ExpenseChart = ({ data, categories }) => {
   if (chartData.length === 0) return null;
 
   return (
-    <section className="card">
+    <Card className="animate-fade-in">
       <h2 className="text-xl font-bold mb-4">Spending Distribution</h2>
       <div className="h-75 w-full">
         <ResponsiveContainer width="100%" height="100%">
@@ -64,7 +66,7 @@ const ExpenseChart = ({ data, categories }) => {
           </PieChart>
         </ResponsiveContainer>
       </div>
-    </section>
+    </Card>
   );
 };
 
@@ -83,153 +85,98 @@ const App = () => {
   const formatDate = (date) => date.toISOString().split("T")[0];
   const todayString = formatDate(currentDate);
 
-  const loadCategories = async () => {
+  const loadData = async () => {
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+      const { data: cats } = await supabase
         .from("expense_categories")
         .select("*")
         .order("id");
-      if (error) throw error;
-      setCategories(data);
-    } catch (err) {
-      setError("Failed to load categories");
-    }
-  };
+      setCategories(cats || []);
 
-  const loadExpenses = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
+      const { data: exps } = await supabase
         .from("expenses")
         .select(`*, expense_categories!fk_expense_categories (name, icon)`)
         .eq("date", todayString);
 
-      if (error) throw error;
-      const inputData = {};
-      if (data)
-        data.forEach((exp) => (inputData[exp.category_id] = exp.amount));
-      setInputValues(inputData);
-      setExpenses(data);
+      const inputs = {};
+      exps?.forEach((e) => (inputs[e.category_id] = e.amount));
+      setInputValues(inputs);
+      setExpenses(exps || []);
     } catch (err) {
-      setError("Failed to load today's data.");
+      setError("Failed to sync data");
     } finally {
       setLoading(false);
     }
   };
 
   const calculateMonthlyTotal = async () => {
-    try {
-      const start = formatDate(
-        new Date(currentDate.getFullYear(), currentDate.getMonth(), 1),
-      );
-      const end = formatDate(
-        new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0),
-      );
-      const { data } = await supabase
-        .from("expenses")
-        .select("amount")
-        .gte("date", start)
-        .lte("date", end);
-      const total =
-        data?.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0) || 0;
-      setMonthlyTotal(total);
-    } catch (err) {
-      console.error(err);
-    }
+    const start = formatDate(
+      new Date(currentDate.getFullYear(), currentDate.getMonth(), 1),
+    );
+    const end = formatDate(
+      new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0),
+    );
+    const { data } = await supabase
+      .from("expenses")
+      .select("amount")
+      .gte("date", start)
+      .lte("date", end);
+    setMonthlyTotal(
+      data?.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0) || 0,
+    );
   };
+
+  useEffect(() => {
+    loadData();
+  }, [todayString]);
+  useEffect(() => {
+    calculateMonthlyTotal();
+  }, [todayString]);
 
   const saveExpenses = async () => {
-    try {
-      setSaving(true);
-      setError("");
-      const toInsert = categories
-        .filter(
-          (cat) => inputValues[cat.id] && parseFloat(inputValues[cat.id]) > 0,
-        )
-        .map((cat) => ({
-          date: todayString,
-          category_id: cat.id,
-          amount: parseFloat(inputValues[cat.id]).toFixed(2),
-          description: `${cat.name} expense`,
-        }));
+    setSaving(true);
+    const toInsert = categories
+      .filter((cat) => inputValues[cat.id] > 0)
+      .map((cat) => ({
+        date: todayString,
+        category_id: cat.id,
+        amount: parseFloat(inputValues[cat.id]).toFixed(2),
+        description: `${cat.name} expense`,
+      }));
 
-      if (toInsert.length === 0) return setError("Please enter an amount.");
-
-      await supabase.from("expenses").delete().eq("date", todayString);
-      const { error: insErr } = await supabase
-        .from("expenses")
-        .insert(toInsert);
-      if (insErr) throw insErr;
-
-      await loadExpenses();
-      await calculateMonthlyTotal();
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
-    } catch (err) {
-      setError("Failed to save.");
-    } finally {
+    if (toInsert.length === 0) {
       setSaving(false);
+      return setError("Please enter an amount.");
     }
-  };
 
-  useEffect(() => {
-    loadCategories();
-  }, []);
-  useEffect(() => {
-    if (categories.length > 0) {
-      loadExpenses();
-      calculateMonthlyTotal();
-    }
-  }, [todayString, categories.length]);
-
-  const addCategory = async () => {
-    if (!newCategoryName.trim()) return;
-    try {
-      setSaving(true);
-      const { error } = await supabase
-        .from("expense_categories")
-        .insert([{ name: newCategoryName, icon: "📁" }]);
-      if (error) throw error;
-      setNewCategoryName("");
-      await loadCategories();
-    } catch (err) {
-      setError("Failed to add category");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const navigateDate = (days) => {
-    const next = new Date(currentDate);
-    next.setDate(next.getDate() + days);
-    setCurrentDate(next);
+    await supabase.from("expenses").delete().eq("date", todayString);
+    await supabase.from("expenses").insert(toInsert);
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 3000);
+    setSaving(false);
+    loadData();
   };
 
   if (loading)
     return (
-      <div className="flex items-center justify-center min-h-screen bg-secondary-light font-display">
+      <div className="flex items-center justify-center min-h-screen bg-secondary-light">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-light" />
       </div>
     );
 
   return (
-    <div className="w-full min-h-screen bg-secondary-light p-4 md:p-8 font-display text-primary-dark">
+    <div className="w-full min-h-screen bg-secondary-light p-4 md:p-8 font-display">
       {showSuccess && (
-        <div className="fixed top-6 right-6 z-50">
-          <div className="bg-success text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-fade-in">
-            <span>✅</span>{" "}
-            <span className="font-medium">Synced Successfully</span>
-          </div>
+        <div className="fixed top-6 right-6 z-50 bg-success text-white px-6 py-3 rounded-lg shadow-xl animate-fade-in">
+          ✅ Synced Successfully
         </div>
       )}
 
       <div className="container-narrow space-y-8">
-        {/* Header Section - Removed interactive-lift */}
         <header className="card grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight mb-2">
-              Expense Tracker
-            </h1>
+            <h1 className="text-xl font-bold mb-2">Personal Expense Tracker</h1>
             <p className="text-primary-light font-medium">
               {currentDate.toLocaleDateString("en-US", {
                 weekday: "long",
@@ -238,53 +185,61 @@ const App = () => {
               })}
             </p>
             <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => navigateDate(-1)}
-                className="btn btn-secondary btn-sm"
+              <Button
+                onClick={() =>
+                  setCurrentDate(
+                    new Date(currentDate.setDate(currentDate.getDate() - 1)),
+                  )
+                }
+                variant="secondary"
+                size="sm"
               >
                 ←
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setCurrentDate(new Date())}
-                className="btn btn-outline btn-sm"
+                variant="outline"
+                size="sm"
               >
                 Today
-              </button>
-              <button
-                onClick={() => navigateDate(1)}
-                className="btn btn-secondary btn-sm"
+              </Button>
+              <Button
+                onClick={() =>
+                  setCurrentDate(
+                    new Date(currentDate.setDate(currentDate.getDate() + 1)),
+                  )
+                }
+                variant="secondary"
+                size="sm"
               >
                 →
-              </button>
+              </Button>
             </div>
           </div>
-          <div className="card-primary p-6 rounded-xl flex justify-between items-center">
+          <Card
+            variant="primary"
+            className="flex justify-between items-center p-6"
+          >
             <div>
-              <p className="text-xs uppercase tracking-widest font-bold opacity-70">
-                Monthly Total
-              </p>
-              <p className="text-4xl font-black text-primary-dark">
+              <p className="text-xs uppercase font-bold opacity-70">Monthly</p>
+              <p className="text-3xl font-black">
                 {monthlyTotal.toLocaleString()}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-xs uppercase tracking-widest font-bold opacity-70">
-                Today
-              </p>
-              <p className="text-2xl font-bold text-success">
+              <p className="text-xs uppercase font-bold opacity-70">Today</p>
+              <p className="text-xl font-bold text-success">
                 {Object.values(inputValues)
                   .reduce((a, b) => a + (parseFloat(b) || 0), 0)
                   .toLocaleString()}
               </p>
             </div>
-          </div>
+          </Card>
         </header>
 
-        {/* Analytics Section */}
         <ExpenseChart data={inputValues} categories={categories} />
 
-        {/* Form Section - Removed animate-slide-up */}
-        <section className="card">
+        <Card>
           <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
             📝 Log Expenses
           </h2>
@@ -295,68 +250,60 @@ const App = () => {
             }}
             className="space-y-8"
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {categories.map((cat) => (
-                <div key={cat.id} className="space-y-2">
-                  <label className="text-sm font-bold flex items-center gap-2">
-                    {cat.icon} {cat.name}
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 opacity-40 text-sm"></span>
-                    <input
-                      type="number"
-                      value={inputValues[cat.id] || ""}
-                      onChange={(e) =>
-                        setInputValues({
-                          ...inputValues,
-                          [cat.id]: e.target.value,
-                        })
-                      }
-                      className="input-base pl-7"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
+                <Input
+                  key={cat.id}
+                  label={cat.name}
+                  icon={cat.icon}
+                  type="number"
+                  placeholder="0.00"
+                  value={inputValues[cat.id] || ""}
+                  onChange={(e) =>
+                    setInputValues({ ...inputValues, [cat.id]: e.target.value })
+                  }
+                />
               ))}
             </div>
             <div className="flex justify-end pt-4 border-t border-secondary-dark">
-              <button
-                type="submit"
-                disabled={saving}
-                className="btn btn-primary btn-lg w-full md:w-auto"
-              >
-                {saving ? "Processing..." : "Save Today's Data"}
-              </button>
+              <Button type="submit" disabled={saving} size="md">
+                {saving ? "Saving..." : "Save Expenses"}
+              </Button>
             </div>
           </form>
-        </section>
+        </Card>
 
-        {/* Category Management */}
-        <section className="card bg-secondary-dark/30">
-          <h2 className="text-lg font-bold mb-4">Manage Categories</h2>
+        <Card className="bg-secondary-dark/30">
+          <h2 className="text-lg font-bold mb-4 text-primary-dark">
+            Manage Categories
+          </h2>
           <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              type="text"
-              placeholder="e.g. Electricity"
+            <Input
+              placeholder="New category name..."
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
-              className="input-base flex-1"
             />
-            <button
-              onClick={addCategory}
-              disabled={saving}
-              className="btn btn-primary"
+            <Button
+              onClick={async () => {
+                await supabase
+                  .from("expense_categories")
+                  .insert([{ name: newCategoryName, icon: "📁" }]);
+                setNewCategoryName("");
+                loadData();
+              }}
+              size="md"
             >
-              Add Category
-            </button>
-            <button
+              Add
+            </Button>
+            <Button
               onClick={() => setInputValues({})}
-              className="btn btn-outline"
+              variant="outline"
+              size="md"
             >
               Clear All
-            </button>
+            </Button>
           </div>
-        </section>
+        </Card>
       </div>
     </div>
   );
