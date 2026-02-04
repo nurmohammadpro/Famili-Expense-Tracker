@@ -176,7 +176,7 @@ const App = () => {
       <div className="container-narrow space-y-8">
         <header className="card grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <div>
-            <h1 className="text-xl font-bold mb-2">Personal Expense Tracker</h1>
+            <h1 className="text-xl font-bold mb-2">Family Expense Tracker</h1>
             <p className="text-primary-light font-medium">
               {currentDate.toLocaleDateString("en-US", {
                 weekday: "long",
